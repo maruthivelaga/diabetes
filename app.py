@@ -1,87 +1,49 @@
-import uvicorn
-from fastapi import FastAPI, File, UploadFile
-from fastapi.responses import JSONResponse, FileResponse
-import shutil
+from fastapi import FastAPI, UploadFile, File
+from fastapi.responses import JSONResponse
+import torch
+from torchvision import transforms
+from PIL import Image
+import io
 import os
-import json
-import numpy as np
-import tensorflow as tf
-from gradcam_utils import generate_gradcam, preprocess_image  # optional if you want Grad-CAM
+import uvicorn
 
 app = FastAPI()
 
-# Ensure required directories exist
-os.makedirs("uploads", exist_ok=True)
+# Load model
+model = torch.load("model.pkl", map_location="cpu")
+model.eval()
 
-# Load TFLite model
-try:
-    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-    model_path = os.path.join(BASE_DIR, "model.tflite")
-    interpreter = tf.lite.Interpreter(model_path=model_path)
-    interpreter.allocate_tensors()
-    input_details = interpreter.get_input_details()
-    output_details = interpreter.get_output_details()
-    print("✅ TFLite model loaded successfully.")
-except Exception as e:
-    raise RuntimeError(f"❌ Failed to load TFLite model: {e}")
+# Define preprocessing (adjust to your model’s training setup)
+transform = transforms.Compose([
+    transforms.Resize((224, 224)),   # match training image size
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]) 
+])
 
-# Load class names
-try:
-    class_names = sorted(os.listdir(os.path.join(BASE_DIR, "augmented_dataset")))
-    print(f"✅ Loaded {len(class_names)} class names.")
-except Exception as e:
-    raise RuntimeError(f"❌ Failed to read class names: {e}")
-
-# Load remedies
-try:
-    with open(os.path.join(BASE_DIR, "remedies.json"), "r") as f:
-        remedies = json.load(f)
-    print("✅ Remedies loaded.")
-except FileNotFoundError:
-    remedies = {}
-    print("⚠️ remedies.json not found. Proceeding without remedies.")
+@app.get("/")
+def home():
+    return {"message": "Retina Model API is running 🚀"}
 
 @app.post("/predict")
 async def predict(file: UploadFile = File(...)):
-    # Save uploaded image
-    img_path = f"uploads/{file.filename}"
-    with open(img_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-
-    # Preprocess image
     try:
-        img_array = preprocess_image(img_path)  # should return shape [1, H, W, C], dtype=float32
-        # TFLite expects float32
-        interpreter.set_tensor(input_details[0]['index'], img_array.astype(np.float32))
-        interpreter.invoke()
-        predictions = interpreter.get_tensor(output_details[0]['index'])[0]
-        class_index = predictions.argmax()
-        class_name = class_names[class_index]
-        confidence = float(predictions[class_index])
+        # Read image
+        image_data = await file.read()
+        image = Image.open(io.BytesIO(image_data)).convert("RGB")
+
+        # Preprocess
+        img_tensor = transform(image).unsqueeze(0)
+
+        # Predict
+        with torch.no_grad():
+            outputs = model(img_tensor)
+            _, predicted = torch.max(outputs, 1)
+
+        return JSONResponse({"prediction": int(predicted.item())})
     except Exception as e:
-        return JSONResponse(status_code=500, content={"error": f"Prediction failed: {str(e)}"})
+        return JSONResponse({"error": str(e)}, status_code=500)
 
-    # Optional Grad-CAM
-    gradcam_path = f"uploads/gradcam_{file.filename}"
-    try:
-        generate_gradcam(interpreter, img_path, gradcam_path)  # Adjust function for TFLite if needed
-    except Exception as e:
-        gradcam_path = ""
-        print(f"⚠️ Grad-CAM generation failed: {e}")
-
-    return {
-        "class": class_name,
-        "confidence": round(confidence, 3),
-        "remedy": remedies.get(class_name, "No remedy found."),
-        "gradcam": gradcam_path
-    }
-
-@app.get("/gradcam/{filename}")
-async def get_gradcam(filename: str):
-    file_path = f"uploads/{filename}"
-    if os.path.exists(file_path):
-        return FileResponse(file_path)
-    return JSONResponse(status_code=404, content={"message": "File not found."})
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    port = int(os.environ.get("PORT", 10000))  # Render uses $PORT
+    uvicorn.run(app, host="0.0.0.0", port=port)
