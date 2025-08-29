@@ -14,7 +14,7 @@ os.makedirs("uploads", exist_ok=True)
 
 # Load TFLite model
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-model_path = os.path.join(BASE_DIR, "model.tflite")
+model_path = os.path.join(BASE_DIR, "converted_model.tflite")
 try:
     interpreter = tf.lite.Interpreter(model_path=model_path)
     interpreter.allocate_tensors()
