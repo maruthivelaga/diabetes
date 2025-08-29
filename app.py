@@ -25,7 +25,7 @@ except Exception as e:
     raise RuntimeError(f"❌ Failed to load TFLite model: {e}")
 
 # Load class labels from labels.txt
-labels_path = os.path.join(BASE_DIR, "labels.txt")
+labels_path = os.path.join(BASE_DIR, "label.txt")
 try:
     with open(labels_path, "r") as f:
         class_names = [line.strip() for line in f.readlines()]
