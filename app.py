@@ -10,7 +10,7 @@ import tensorflow as tf
 app = FastAPI()
 
 # Ensure uploads directory exists
-os.makedirs("uploads", exist_ok=true)
+os.makedirs("uploads", exist_ok=True)
 
 # Load TFLite model
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
