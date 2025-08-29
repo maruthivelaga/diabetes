@@ -10,7 +10,7 @@ import uvicorn
 app = FastAPI()
 
 # Load model
-model = torch.load("model.pkl", map_location="cpu")
+model = torch.load("converted_model.tflite", map_location="cpu")
 model.eval()
 
 # Define preprocessing (adjust to your model’s training setup)
